@@ -1,3 +1,40 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --measure-line: 1px;
+}
+
+/* Fine-pointer devices only get the magnetic/custom-cursor treatment */
+@media (hover: hover) and (pointer: fine) {
+  .cursor-none-desktop {
+    cursor: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.bg-grid-fabric {
+  background-image:
+    linear-gradient(rgba(20, 18, 15, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 18, 15, 0.06) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.perspective-1200 {
+  perspective: 1200px;
+}
