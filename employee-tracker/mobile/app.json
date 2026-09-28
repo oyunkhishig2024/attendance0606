@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Employee Tracker",
+    "slug": "employee-tracker",
+    "scheme": "employeetracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-router", "expo-location", "expo-secure-store", "expo-camera"],
+    "ios": {
+      "bundleIdentifier": "mn.example.employeetracker",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Ажилд ирснээ бүртгэхийн тулд байршлыг ашиглана.",
+        "NSCameraUsageDescription": "Ажилтны QR кодыг уншихад камер ашиглана."
+      }
+    },
+    "android": {
+      "package": "mn.example.employeetracker",
+      "minSdkVersion": 26,
+      "targetSdkVersion": 35,
+      "permissions": ["ACCESS_FINE_LOCATION", "CAMERA"]
+    }
+  }
+}
