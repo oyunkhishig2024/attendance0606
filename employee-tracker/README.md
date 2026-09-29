@@ -2,8 +2,9 @@
 
 Implementation of `Employee_Tracker_Specification_v3.pdf`, scoped to the
 **pivotal vertical slice** the spec itself recommends building first
-(§11.1/§11.2, milestones M0–M2): tenancy + RBAC, branch geofences, and the
-geofence check-in loop, with the mandatory tenant-isolation gate green.
+(§11.1/§11.2, milestones M0–M2 plus most of M3): tenancy + RBAC, branch
+geofences, the geofence check-in loop, scheduling, absence-reason logging,
+and attendance review, with the mandatory tenant-isolation gate green.
 
 The full spec is a 16-week, two-engineer build (a multi-tenant SaaS backend
 plus a native iOS/Android app with anti-fraud, consent PDFs, and platform
@@ -34,20 +35,36 @@ verified, and what's explicitly deferred.
   `/public/consent/{token}` — opaque tokens, rate-limited, `Cache-Control:
   no-store`.
 - Attendance list with filters, `/reports/org-day` summary.
+- **Absence-reason logging** (`app/routers/reasons.py`, `app/reasons_catalog.py`):
+  the 15 preset Mongolian reason types (§1.2 item 9 — the spec names the
+  capability but doesn't enumerate them; these are a reasonable generic HR
+  set), multi-employee/date-range writes (one `reason_logs` row per
+  employee spanning the range), and per-day attendance status flipped to
+  `reason` **without** clobbering an existing check-in's time/distance
+  (§3.5) — or a fresh `reason` record created if the employee hadn't
+  checked in at all that day.
+- **Employee month grid** (`app/services/month_grid.py`,
+  `GET /employees/{id}/month-grid`) — spec §4.5's `employee_month_grid`
+  derived read model: assembles attendance + holidays + resolved schedule
+  so every day in a month is explained (`off`/holiday, `off`/rest day,
+  `absent` for a past no-show, `pending` for today/future) rather than
+  appearing as a gap.
 - Platform (SystemAdmin): organization provisioning/suspend/reactivate,
   aggregate-only analytics, audit logs.
 - Error shape, RBAC, tenant isolation, and account-state flags (`disabled`,
   `must_change_password`, org `suspended`) match spec §2 and §5.1 exactly.
 
-**Tests** (`backend/tests/`, 24 passing): the **mandatory tenant-isolation
+**Tests** (`backend/tests/`, 36 passing): the **mandatory tenant-isolation
 gate** (§7.4 — two orgs, every id-addressed route, id substitution, never a
 403/404-violating leak), the **role matrix** (§7.5 — Manager read-only
 everywhere, HR denied on tenant-user writes and the default schedule,
-tenant roles 403 on `/platform/*`, SystemAdmin 403 on tenant routes), and
-the highest-value unit tests from §7.2 (Haversine boundary behaviour at
-exactly the radius, status resolution at exactly `shift_start +
-grace_minutes`, holiday/non-workday handling, and all four schedule
-precedence combinations plus the deactivation fallback).
+tenant roles 403 on `/platform/*`, SystemAdmin 403 on tenant routes), the
+highest-value unit tests from §7.2 (Haversine boundary behaviour at exactly
+the radius, status resolution at exactly `shift_start + grace_minutes`,
+holiday/non-workday handling, all four schedule precedence combinations
+plus the deactivation fallback), reason-logging behaviour (role gating,
+invalid reason key rejected, check-in preservation), and the month-grid's
+four day-classification cases.
 
 Writing these tests caught two real bugs before they shipped: `DELETE
 /users/{id}` and `DELETE /holidays/{id}` returned `{"ok": true}` for another
@@ -60,21 +77,33 @@ Run it:
 cd backend
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-pytest                      # 24 passed
+pytest                      # 36 passed
 uvicorn app.main:app --reload   # MONGO_URL defaults to an in-process mongomock;
                                  # set a real MONGO_URL in .env for production
 ```
 
 ### Mobile (`mobile/`) — Expo Router / React Native
 
-Core-journey screens only, matching spec §9/§10's design tokens and file
-layout: `theme.ts` (Blueberry `#243b8f` / Cream Soda `#fff0c9`), `login`,
-`signup`, `change-password`, the dashboard (`(app)/index.tsx`, reading
+Matching spec §9/§10's design tokens and file layout: `theme.ts`
+(Blueberry `#243b8f` / Cream Soda `#fff0c9`), `login`, `signup`,
+`change-password`, a two-tab bottom bar (Хяналт/Ирц — Staff/Analytics/More
+are deferred, see below), the dashboard (`(app)/index.tsx`, reading
 `/reports/org-day`), and the two public flows — `consent/[token].tsx` and
 **`checkin/[token].tsx`**, which implements the full permission lifecycle
 from spec §8.1/§8.2 (rationale → foreground one-shot `Accuracy.High` fix →
 accuracy gate with retry → server-authoritative result, never a generic
 "failed").
+
+Also now built: the **attendance-review screen** (`(app)/attendance.tsx` —
+date navigator, status filter chips including "Флагтай", a list joined
+against the employees cache for display names), the **employee detail
+screen** (`employee/[id].tsx` — a real 7-column month grid coloured by
+`lib/status.ts`, month stepper, flag markers), and the **reason-logging
+form** (`reasons/log.tsx` — reason-type chips from the 15-item catalogue,
+a date range, multi-employee selection via `EmployeeMultiSelect`,
+preselecting the employee when opened from their detail page). Both new
+screens are gated behind `useRole().can("employees.write")` for the
+write action, matching Manager's read-only capability matrix row.
 
 `npm install` succeeds and `npx tsc --noEmit` is clean. It has **not** been
 run on a device, simulator, or `expo start` — there's no Android SDK, iOS
@@ -85,11 +114,13 @@ type-checked scaffold, not a runtime-verified app.
 
 ## Deferred (out of this slice)
 
-Everything the spec places at M3 and later, or that needs a device/store
+Everything the spec places at M4 and later, or that needs a device/store
 account to validate meaningfully:
 
-- **M3**: `reason_logs` (absence reasons), attendance-review UI (date
-  navigator, 30-day employee detail grid), the "why this status?" explainer.
+- **Rest of M3**: the "why this status?" explainer surfaced inline on a
+  status pill (the month grid's `explanation` field already carries the
+  data — `holiday`/`rest_day`/`pending` — it's just not rendered as
+  human-readable copy in the UI yet); the `staff.tsx`/`analytics.tsx` tabs.
 - **M4**: consent PDF generation (ReportLab/svglib), QR rendering/scanning,
   impossible-travel heuristic, flagged-review queue UI.
 - **M5**: platform admin UI screens (the API routes exist; there's no
@@ -115,9 +146,12 @@ account to validate meaningfully:
   Implemented as: HR gets 403 (not 409) on any write to the default
   schedule; the default is never deletable by anyone (409) — see
   `app/routers/shifts.py`.
-- No end-of-day batch job marks a no-show `absent`; the spec doesn't specify
-  when such a job would run for the M0–M2 slice. `/reports/org-day` reports
-  employees with no attendance row for the date as `not_checked_in`
-  separately, rather than inventing an unscoped absence-marking policy.
+- No end-of-day batch job marks a no-show `absent` in real time; the spec
+  doesn't specify when such a job would run. `/reports/org-day` (today's
+  live summary) still reports a no-show as `not_checked_in` rather than
+  guessing `absent` before the day is over. The month grid (a look *back*
+  at a past employee, not today's live board) computes `absent` for a past
+  workday with no record on the fly at read time — the two views ask
+  different questions and answer them differently on purpose.
 - The consent screen is one screen with the acknowledge-then-submit order
   enforced, not the full 4-step wizard with back-navigation from §9.4.

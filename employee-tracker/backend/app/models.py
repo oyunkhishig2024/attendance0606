@@ -129,6 +129,14 @@ class ConsentRequest(BaseModel):
     device_fingerprint: str
 
 
+class ReasonLogCreate(BaseModel):
+    employee_ids: list[str] = Field(min_length=1)
+    reason_key: str
+    start_date: str
+    end_date: str
+    note: Optional[str] = None
+
+
 class OrganizationProvisionRequest(BaseModel):
     name: str
     admin_name: str

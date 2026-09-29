@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import ensure_indexes
 from app.errors import AppError, app_error_handler
-from app.routers import attendance, auth, employees, health, holidays, locations, platform, public, shifts, users
+from app.routers import (
+    attendance, auth, employees, health, holidays, locations, platform, public, reasons, shifts, users,
+)
 
 
 @asynccontextmanager
@@ -42,6 +44,7 @@ app.include_router(locations.router)
 app.include_router(employees.router)
 app.include_router(shifts.router)
 app.include_router(holidays.router)
+app.include_router(reasons.router)
 app.include_router(public.router)
 app.include_router(attendance.router)
 app.include_router(platform.router)

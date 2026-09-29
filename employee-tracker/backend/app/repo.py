@@ -286,6 +286,14 @@ async def create_attendance(organization_id: str, data: dict) -> dict:
     return record
 
 
+async def list_attendance_for_employee(organization_id: str, employee_id: str,
+                                        start_date: str, end_date: str) -> list[dict]:
+    return await db.attendance.find({
+        "organization_id": organization_id, "employee_id": employee_id,
+        "date": {"$gte": start_date, "$lte": end_date},
+    }).to_list(length=100)
+
+
 async def list_attendance(organization_id: str, *, date: Optional[str] = None,
                            location_id: Optional[str] = None, department: Optional[str] = None,
                            status: Optional[str] = None, flagged: Optional[bool] = None,
@@ -308,6 +316,40 @@ async def list_attendance(organization_id: str, *, date: Optional[str] = None,
             and (not q or q.lower() in employees.get(r["employee_id"], {}).get("full_name", "").lower())
         ]
     return records
+
+
+async def upsert_attendance_reason(organization_id: str, employee_id: str, location_id: str, date: str) -> dict:
+    """Reason logging must not overwrite a recorded check-in (spec §3.5): it
+    adjusts `status` to `reason` while preserving `check_in_time` and
+    `distance_m`. With no existing record, it creates one so the day isn't a
+    gap in the day's summary."""
+    existing = await get_attendance_for_day(organization_id, employee_id, date)
+    if existing is not None:
+        await db.attendance.update_one(
+            {"id": existing["id"], "organization_id": organization_id}, {"$set": {"status": "reason"}}
+        )
+        existing["status"] = "reason"
+        return existing
+    return await create_attendance(organization_id, {
+        "employee_id": employee_id, "location_id": location_id, "date": date, "status": "reason",
+        "check_in_time": None, "distance_m": None, "accuracy_m": None, "device_match": None,
+        "mock_location_flag": False, "flagged": False, "source": "manual",
+    })
+
+
+# ---- reason_logs -----------------------------------------------------------------
+
+async def create_reason_log(organization_id: str, data: dict) -> dict:
+    log = {"id": new_id(), "organization_id": organization_id, "created_at": utcnow(), **data}
+    await db.reason_logs.insert_one(log)
+    return log
+
+
+async def list_reason_logs(organization_id: str, *, employee_id: Optional[str] = None) -> list[dict]:
+    query: dict[str, Any] = {"organization_id": organization_id}
+    if employee_id:
+        query["employee_id"] = employee_id
+    return await db.reason_logs.find(query).sort("start_date", -1).to_list(length=10000)
 
 
 # ---- holidays ------------------------------------------------------------------

@@ -5,6 +5,7 @@ from app.audit import audit_write
 from app.deps import CurrentUser, require_tenant_read, require_tenant_write
 from app.errors import AppError
 from app.models import EmployeeCreate, EmployeeUpdate
+from app.services.month_grid import build_employee_month_grid
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
 
@@ -33,6 +34,16 @@ async def get_employee(employee_id: str, current_user: CurrentUser = Depends(req
     if employee is None:
         raise AppError(404, "not_found", "Ажилтан олдсонгүй.")
     return employee
+
+
+@router.get("/{employee_id}/month-grid")
+async def get_employee_month_grid(employee_id: str, month: str,
+                                   current_user: CurrentUser = Depends(require_tenant_read)):
+    employee = await repo.get_employee(current_user.organization_id, employee_id)
+    if employee is None:
+        raise AppError(404, "not_found", "Ажилтан олдсонгүй.")
+    return {"employee_id": employee_id, "month": month,
+            "days": await build_employee_month_grid(current_user.organization_id, employee, month)}
 
 
 @router.put("/{employee_id}")
